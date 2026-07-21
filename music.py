@@ -1,18 +1,21 @@
 """================================================================
-  MUSIQA BOT — PYTHON 3.13 REJIMIGA MOSLASHTIRILGAN XAVFSIZ KOD
+  MUSIQA BOT — OPTIMALLASHTIRILGAN VA XAVFSIZ PYTHON 3.13 KODI
 ================================================================"""
 import asyncio
 import logging
 import os
 import subprocess
 import uuid
-import requests
+import httpx
 from dotenv import load_dotenv
 from yt_dlp import YoutubeDL
+from shazamio import Shazam
+
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart, StateFilter
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -27,7 +30,7 @@ import aiosqlite
 logging.basicConfig(level=logging.INFO)
 
 # ============================================================
-# config.py — XAVFSIZLIK SOZLAMALARI
+# CONFIGURATION
 # ============================================================
 load_dotenv()
 
@@ -40,8 +43,10 @@ DB_PATH = os.getenv("DB_PATH", "bot.db")
 TEMP_DIR = "temp"
 SONGS_PER_PAGE = 10
 
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 # ============================================================
-# database/db.py
+# DATABASE SETUP
 # ============================================================
 CREATE_USERS = """CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
@@ -54,25 +59,21 @@ CREATE_CHANNELS = """CREATE TABLE IF NOT EXISTS channels (
     title TEXT,
     url TEXT);"""
 
-
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db_conn:
         await db_conn.execute(CREATE_USERS)
         await db_conn.execute(CREATE_CHANNELS)
         await db_conn.commit()
 
-
 async def add_user_if_not_exists(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db_conn:
         await db_conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
         await db_conn.commit()
 
-
 async def set_user_language(user_id: int, lang: str):
     async with aiosqlite.connect(DB_PATH) as db_conn:
         await db_conn.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, user_id))
         await db_conn.commit()
-
 
 async def get_user_language(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db_conn:
@@ -80,13 +81,11 @@ async def get_user_language(user_id: int):
         row = await cur.fetchone()
         return row[0] if row else None
 
-
 async def get_all_user_ids():
     async with aiosqlite.connect(DB_PATH) as db_conn:
         cur = await db_conn.execute("SELECT user_id FROM users")
         rows = await cur.fetchall()
         return [r[0] for r in rows]
-
 
 async def count_users():
     async with aiosqlite.connect(DB_PATH) as db_conn:
@@ -94,31 +93,26 @@ async def count_users():
         row = await cur.fetchone()
         return row[0]
 
-
 async def add_channel(chat_id: str, title: str, url: str):
     async with aiosqlite.connect(DB_PATH) as db_conn:
         await db_conn.execute("INSERT INTO channels (chat_id, title, url) VALUES (?, ?, ?)", (chat_id, title, url))
         await db_conn.commit()
-
 
 async def remove_channel(channel_db_id: int):
     async with aiosqlite.connect(DB_PATH) as db_conn:
         await db_conn.execute("DELETE FROM channels WHERE id = ?", (channel_db_id,))
         await db_conn.commit()
 
-
 async def get_channels():
     async with aiosqlite.connect(DB_PATH) as db_conn:
         cur = await db_conn.execute("SELECT id, chat_id, title, url FROM channels")
         return await cur.fetchall()
 
-
 # ============================================================
-# utils/localization.py
+# LOCALIZATION
 # ============================================================
 TEXTS = {
     "choose_language": {"uz": "🌐 Tilni tanlang:", "ru": "🌐 Выберите язык:", "en": "🌐 Choose your language:"},
-    "language_set": {"uz": "✅ Til o'zbekcha qilib o'rnatildi.", "ru": "✅ Язык установлен: русский.", "en": "✅ Language set to English."},
     "subscribe_required": {"uz": "⚠️ Botdan foydalanish uchun quyidagi kanallarga a'zo bo'ling, so'ng «✅ Tekshirish» tugmasini bosing:", "ru": "⚠️ Чтобы пользоваться ботом, подпишитесь на каналы ниже, затем нажмите «✅ Проверить»:", "en": "⚠️ To use the bot, subscribe to the channels below, then press «✅ Check»:"},
     "check_button": {"uz": "✅ Tekshirish", "ru": "✅ Проверить", "en": "✅ Check"},
     "not_subscribed": {"uz": "❌ Siz hali barcha kanallarga a'zo bo'lmadingiz.", "ru": "❌ Вы ещё не подписались на все каналы.", "en": "❌ You haven't subscribed to all channels yet."},
@@ -143,37 +137,30 @@ TEXTS = {
     "prev_button": {"uz": "⬅️ Orqaga", "ru": "⬅️ Назад", "en": "⬅️ Back"},
 }
 
-
 def t(key: str, lang: str) -> str:
     return TEXTS.get(key, {}).get(lang or "uz", key)
 
-
 # ============================================================
-# utils/states.py
+# FSM STATES
 # ============================================================
 class SearchStates(StatesGroup):
     waiting_query = State()
 
-
 class DownloaderStates(StatesGroup):
     waiting_link = State()
 
-
 class RoundVideoStates(StatesGroup):
     waiting_video = State()
-
 
 class AdminBroadcastStates(StatesGroup):
     waiting_content = State()
     confirming = State()
 
-
 class AdminChannelStates(StatesGroup):
     waiting_channel = State()
 
-
 # ============================================================
-# Keyboards
+# KEYBOARDS
 # ============================================================
 def main_menu_kb(lang: str, user_id: int) -> ReplyKeyboardMarkup:
     rows = [
@@ -185,7 +172,6 @@ def main_menu_kb(lang: str, user_id: int) -> ReplyKeyboardMarkup:
         rows.append([KeyboardButton(text=t("btn_admin", lang))])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
-
 def language_kb() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="🇺🇿 O'zbekcha", callback_data="lang_uz")
@@ -193,14 +179,12 @@ def language_kb() -> InlineKeyboardMarkup:
     b.button(text="🇬🇧 English", callback_data="lang_en")
     return b.adjust(1).as_markup()
 
-
 def subscribe_kb(channels, lang: str) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for _id, chat_id, title, url in channels:
         b.button(text=f"➕ {title or chat_id}", url=url)
     b.button(text=t("check_button", lang), callback_data="check_subscription")
     return b.adjust(1).as_markup()
-
 
 def songs_page_kb(results, page: int, lang: str, prefix: str = "song") -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
@@ -219,7 +203,6 @@ def songs_page_kb(results, page: int, lang: str, prefix: str = "song") -> Inline
         b.row(*nav_row)
     return b.as_markup()
 
-
 def admin_panel_kb() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="📢 Reklama yuborish", callback_data="admin_broadcast")
@@ -228,13 +211,11 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
     b.button(text="📊 Statistika", callback_data="admin_stats")
     return b.adjust(1).as_markup()
 
-
 def channels_manage_kb(channels) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for ch_id, chat_id, title, url in channels:
         b.button(text=f"❌ {title or chat_id}", callback_data=f"admin_channel_del_{ch_id}")
     return b.adjust(1).as_markup()
-
 
 def broadcast_confirm_kb() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
@@ -242,71 +223,42 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
     b.button(text="❌ Bekor qilish", callback_data="broadcast_cancel")
     return b.adjust(2).as_markup()
 
-
 # ============================================================
-# Services (ASYNC TIZIMGA O'TKAZILGAN BIZNES LOGIKA)
+# SERVICES (ASYNCHRONOUS SERVICES & TOOLS)
 # ============================================================
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-
-def _sync_search_tracks(query: str, limit: int = 50):
+async def search_tracks(query: str, limit: int = 50):
+    """ iTunes API orqali asinxron qidiruv """
     url = "https://itunes.apple.com/search"
     params = {"term": query, "media": "music", "entity": "song", "limit": limit}
-    resp = requests.get(url, params=params, timeout=15)
-    resp.raise_for_status()
-    results = []
-    for item in resp.json().get("results", []):
-        results.append({
-            "title": item.get("trackName"),
-            "artist": item.get("artistName"),
-            "preview_url": item.get("previewUrl"),
-        })
-    return results
-
-
-async def search_tracks(query: str, limit: int = 50):
-    return await asyncio.to_thread(_sync_search_tracks, query, limit)
-
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, params=params, timeout=10.0)
+            if resp.status_code == 200:
+                results = []
+                for item in resp.json().get("results", []):
+                    results.append({
+                        "title": item.get("trackName"),
+                        "artist": item.get("artistName"),
+                        "preview_url": item.get("previewUrl"),
+                    })
+                return results
+        except Exception as e:
+            logging.error(f"iTunes Search Error: {e}")
+    return []
 
 async def recognize_from_file(file_path: str):
+    """ Shazamio kutubxonasi yordamida musiqani aniqlash """
     try:
-        shazam_wav = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}_shazam.wav")
-        await asyncio.to_thread(
-            subprocess.run,
-            [
-                "ffmpeg", "-y", "-i", file_path,
-                "-ss", "0", "-t", "4",
-                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
-                shazam_wav
-            ], check=True, capture_output=True
-        )
-
-        if not os.path.exists(shazam_wav):
-            return None
-
-        with open(shazam_wav, "rb") as f:
-            raw_bytes = f.read()
-
-        if os.path.exists(shazam_wav):
-            os.remove(shazam_wav)
-
-        url = "https://amp.shazam.com/discovery/v5/en-US/UZ/iphone/-/tag/sample"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Content-Type": "application/octet-stream"
-        }
-
-        response = await asyncio.to_thread(requests.post, url, headers=headers, data=raw_bytes, timeout=15)
-
-        if response.status_code == 200:
-            data = response.json()
-            if "track" in data:
-                return {"title": data["track"].get("title"), "artist": data["track"].get("subtitle")}
-        return None
+        shazam = Shazam()
+        out = await shazam.recognize(file_path)
+        if out and "track" in out:
+            return {
+                "title": out["track"].get("title"),
+                "artist": out["track"].get("subtitle")
+            }
     except Exception as e:
-        logging.error(f"Shazam xatoligi: {e}")
-        return None
-
+        logging.error(f"Shazam Recognition Error: {e}")
+    return None
 
 def _sync_download_track_audio(title: str, artist: str) -> str:
     query = f"ytsearch1:{artist} {title} audio"
@@ -323,10 +275,8 @@ def _sync_download_track_audio(title: str, artist: str) -> str:
         ydl.download([query])
     return os.path.join(TEMP_DIR, f"{unique_id}.mp3")
 
-
 async def download_track_audio(title: str, artist: str) -> str:
     return await asyncio.to_thread(_sync_download_track_audio, title, artist)
-
 
 def _sync_download_media(url: str) -> str:
     unique_id = uuid.uuid4().hex
@@ -347,10 +297,8 @@ def _sync_download_media(url: str) -> str:
         return expected_mp4
     return filename
 
-
 async def download_media(url: str) -> str:
     return await asyncio.to_thread(_sync_download_media, url)
-
 
 async def extract_audio(video_path: str) -> str:
     audio_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.wav")
@@ -360,7 +308,6 @@ async def extract_audio(video_path: str) -> str:
         check=True, capture_output=True
     )
     return audio_path
-
 
 async def to_round_video(input_path: str) -> str:
     out_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}_round.mp4")
@@ -374,12 +321,10 @@ async def to_round_video(input_path: str) -> str:
     )
     return out_path
 
-
 # ============================================================
-# Handlers (Asosiy muloqot va qidiruv tizimi)
+# ROUTERS & HANDLERS
 # ============================================================
 start_router = Router()
-
 
 async def is_subscribed(bot, user_id: int) -> bool:
     channels = await get_channels()
@@ -394,14 +339,12 @@ async def is_subscribed(bot, user_id: int) -> bool:
             return False
     return True
 
-
 async def show_subscribe_prompt(message_or_cb, lang: str):
     channels = await get_channels()
     if hasattr(message_or_cb, "message") and message_or_cb.message:
         await message_or_cb.message.answer(t("subscribe_required", lang), reply_markup=subscribe_kb(channels, lang))
     else:
         await message_or_cb.answer(t("subscribe_required", lang), reply_markup=subscribe_kb(channels, lang))
-
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -416,7 +359,6 @@ async def cmd_start(message: Message, state: FSMContext):
         return
     await message.answer(t("main_menu", lang), reply_markup=main_menu_kb(lang, message.from_user.id))
 
-
 @start_router.callback_query(F.data.startswith("lang_"))
 async def set_language(call: CallbackQuery):
     lang = call.data.split("_")[1]
@@ -427,7 +369,6 @@ async def set_language(call: CallbackQuery):
         return
     await call.message.answer(t("main_menu", lang), reply_markup=main_menu_kb(lang, call.from_user.id))
 
-
 @start_router.callback_query(F.data == "check_subscription")
 async def check_subscription(call: CallbackQuery):
     lang = await get_user_language(call.from_user.id) or "uz"
@@ -437,16 +378,13 @@ async def check_subscription(call: CallbackQuery):
     else:
         await call.answer(t("not_subscribed", lang), show_alert=True)
 
-
 @start_router.message(F.text.in_({"🌐 Til", "🌐 Язык", "🌐 Language"}))
 async def change_language(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(t("choose_language", "uz"), reply_markup=language_kb())
 
-
 # --- Qidiruv qismi ---
 music_search_router = Router()
-
 
 @music_search_router.message(F.text.in_({"🎵 Qo'shiq qidirish", "🎵 Поиск музыки", "🎵 Search Music"}))
 async def start_search(message: Message, state: FSMContext):
@@ -454,7 +392,6 @@ async def start_search(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id) or "uz"
     await message.answer(t("search_song_prompt", lang))
     await state.set_state(SearchStates.waiting_query)
-
 
 async def send_results_page(message: Message, results, page: int, lang: str):
     if not results:
@@ -465,7 +402,6 @@ async def send_results_page(message: Message, results, page: int, lang: str):
     lines = [f"{i + 1}. {tr['title']} — {tr['artist']}" for i, tr in enumerate(page_items)]
     await message.answer("\n".join(lines), reply_markup=songs_page_kb(results, page, lang))
 
-
 @music_search_router.message(SearchStates.waiting_query, F.text)
 async def handle_text_query(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id) or "uz"
@@ -473,7 +409,6 @@ async def handle_text_query(message: Message, state: FSMContext):
     results = await search_tracks(message.text)
     await state.update_data(results=results)
     await send_results_page(message, results, 0, lang)
-
 
 @music_search_router.message(SearchStates.waiting_query, F.voice | F.audio)
 async def handle_voice_query(message: Message, state: FSMContext):
@@ -483,9 +418,11 @@ async def handle_voice_query(message: Message, state: FSMContext):
     tg_file = await message.bot.get_file(file.file_id)
     local_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.ogg")
     await message.bot.download_file(tg_file.file_path, local_path)
+    
     track = await recognize_from_file(local_path)
     if os.path.exists(local_path):
         os.remove(local_path)
+        
     if not track:
         await message.answer(t("not_recognized", lang))
         return
@@ -493,7 +430,6 @@ async def handle_voice_query(message: Message, state: FSMContext):
     await state.update_data(results=results)
     await message.answer(f"{t('recognized', lang)} {track['title']} — {track['artist']}")
     await send_results_page(message, results, 0, lang)
-
 
 @music_search_router.message(SearchStates.waiting_query, F.video | F.video_note)
 async def handle_video_query(message: Message, state: FSMContext):
@@ -504,11 +440,13 @@ async def handle_video_query(message: Message, state: FSMContext):
     local_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.mp4")
     await message.bot.download_file(tg_file.file_path, local_path)
     audio_path = await extract_audio(local_path)
+    
     track = await recognize_from_file(audio_path)
     if os.path.exists(local_path):
         os.remove(local_path)
     if os.path.exists(audio_path):
         os.remove(audio_path)
+        
     if not track:
         await message.answer(t("not_recognized", lang))
         return
@@ -516,7 +454,6 @@ async def handle_video_query(message: Message, state: FSMContext):
     await state.update_data(results=results)
     await message.answer(f"{t('recognized', lang)} {track['title']} — {track['artist']}")
     await send_results_page(message, results, 0, lang)
-
 
 @music_search_router.callback_query(F.data.startswith("song_page_"))
 async def paginate_songs(call: CallbackQuery, state: FSMContext):
@@ -528,7 +465,6 @@ async def paginate_songs(call: CallbackQuery, state: FSMContext):
     page_items = results[start:start + SONGS_PER_PAGE]
     lines = [f"{i + 1}. {tr['title']} — {tr['artist']}" for i, tr in enumerate(page_items)]
     await call.message.edit_text("\n".join(lines), reply_markup=songs_page_kb(results, page, lang))
-
 
 @music_search_router.callback_query(F.data.startswith("song_pick_"))
 async def pick_song(call: CallbackQuery, state: FSMContext):
@@ -558,10 +494,8 @@ async def pick_song(call: CallbackQuery, state: FSMContext):
         except Exception:
             pass
 
-
 # --- Downloader va Round Video ---
 downloader_router = Router()
-
 
 @downloader_router.message(F.text.in_({"📥 Instagram / TikTok / YouTube"}))
 async def start_downloader(message: Message, state: FSMContext):
@@ -570,11 +504,11 @@ async def start_downloader(message: Message, state: FSMContext):
     await message.answer(t("send_link", lang))
     await state.set_state(DownloaderStates.waiting_link)
 
-
 @downloader_router.message(DownloaderStates.waiting_link, F.text)
 async def handle_link(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id) or "uz"
     status_msg = await message.answer(t("downloading", lang))
+    video_path = None
     try:
         video_path = await download_media(message.text.strip())
         await message.answer_video(FSInputFile(video_path))
@@ -583,12 +517,14 @@ async def handle_link(message: Message, state: FSMContext):
         await message.answer(t("song_in_video", lang), reply_markup=b.as_markup())
     except Exception as e:
         await message.answer(f"⚠️ Xatolik: {e}")
+        # Agar xatolik bo'lsa va fayl yuklangan bo'lsa, o'chirib tashlaymiz
+        if video_path and os.path.exists(video_path):
+            os.remove(video_path)
     finally:
         try:
             await status_msg.delete()
         except Exception:
             pass
-
 
 @downloader_router.callback_query(F.data == "identify_video_song")
 async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
@@ -596,12 +532,18 @@ async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     video_path = data.get("last_video_path")
     if not video_path or not os.path.exists(video_path):
+        await call.answer("Fayl topilmadi yoki muddati o'tdi.", show_alert=True)
         return
     await call.message.answer(t("recognizing", lang))
     audio_path = await extract_audio(video_path)
     track = await recognize_from_file(audio_path)
+    
+    # Fayllarni tozalash (Xotirani bo'shatish)
     if os.path.exists(audio_path):
         os.remove(audio_path)
+    if os.path.exists(video_path):
+        os.remove(video_path)
+        
     if not track:
         await call.message.answer(t("not_recognized", lang))
         return
@@ -617,9 +559,7 @@ async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
     except Exception as e:
         await call.message.answer(f"⚠️ Xatolik: {e}")
 
-
 round_video_router = Router()
-
 
 @round_video_router.message(F.text.in_({"⭕️ Dumaloq video", "⭕️ Круглое видео", "⭕️ Round video"}))
 async def start_round_video(message: Message, state: FSMContext):
@@ -627,7 +567,6 @@ async def start_round_video(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id) or "uz"
     await message.answer(t("send_square_video", lang))
     await state.set_state(RoundVideoStates.waiting_video)
-
 
 @round_video_router.message(RoundVideoStates.waiting_video, F.video)
 async def handle_round_video(message: Message, state: FSMContext):
@@ -652,10 +591,8 @@ async def handle_round_video(message: Message, state: FSMContext):
             pass
     await state.clear()
 
-
 # --- Admin Panel ---
 admin_router = Router()
-
 
 @admin_router.message(F.text.in_({"🛠 Admin panel", "🛠 Админ панель"}))
 async def open_admin_panel(message: Message, state: FSMContext):
@@ -664,7 +601,6 @@ async def open_admin_panel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("🛠 Admin panel:", reply_markup=admin_panel_kb())
 
-
 @admin_router.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
     if call.from_user.id not in ADMIN_IDS:
@@ -672,7 +608,6 @@ async def admin_stats(call: CallbackQuery):
     count = await count_users()
     await call.message.answer(f"📊 Jami foydalanuvchilar: {count}")
     await call.answer()
-
 
 @admin_router.callback_query(F.data == "admin_channels_list")
 async def admin_channels_list(call: CallbackQuery):
@@ -685,14 +620,12 @@ async def admin_channels_list(call: CallbackQuery):
         await call.message.answer("📋 Kanalni o'chirish uchun bosing:", reply_markup=channels_manage_kb(channels))
     await call.answer()
 
-
 @admin_router.callback_query(F.data == "admin_channel_add")
 async def admin_channel_add_start(call: CallbackQuery, state: FSMContext):
     if call.from_user.id not in ADMIN_IDS:
         return
     await call.message.answer("➕ Format: `@username | https://t.me/url | Nomi`")
     await state.set_state(AdminChannelStates.waiting_channel)
-
 
 @admin_router.message(AdminChannelStates.waiting_channel, F.text)
 async def admin_channel_add_finish(message: Message, state: FSMContext):
@@ -704,14 +637,12 @@ async def admin_channel_add_finish(message: Message, state: FSMContext):
     await message.answer("✅ Kanal qo'shildi.")
     await state.clear()
 
-
 @admin_router.callback_query(F.data.startswith("admin_channel_del_"))
 async def admin_channel_delete(call: CallbackQuery):
     if call.from_user.id not in ADMIN_IDS:
         return
     await remove_channel(int(call.data.split("_")[-1]))
     await call.answer("✅ O'chirildi")
-
 
 @admin_router.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_start(call: CallbackQuery, state: FSMContext):
@@ -720,48 +651,56 @@ async def admin_broadcast_start(call: CallbackQuery, state: FSMContext):
     await call.message.answer("📢 Reklama xabarini yuboring.")
     await state.set_state(AdminBroadcastStates.waiting_content)
 
-
 @admin_router.message(AdminBroadcastStates.waiting_content)
 async def admin_broadcast_preview(message: Message, state: FSMContext):
     await state.update_data(broadcast_chat_id=message.chat.id, broadcast_msg_id=message.message_id)
     await message.answer("Tasdiqlaysizmi?", reply_markup=broadcast_confirm_kb())
     await state.set_state(AdminBroadcastStates.confirming)
 
-
 @admin_router.callback_query(AdminBroadcastStates.confirming, F.data == "broadcast_confirm")
 async def admin_broadcast_send(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     user_ids = await get_all_user_ids()
     sent = 0
+    blocked = 0
+    
     for uid in user_ids:
         try:
             await call.bot.copy_message(chat_id=uid, from_chat_id=data["broadcast_chat_id"], message_id=data["broadcast_msg_id"])
             sent += 1
+            await asyncio.sleep(0.05)
+        except TelegramForbiddenError:
+            blocked += 1
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+            try:
+                await call.bot.copy_message(chat_id=uid, from_chat_id=data["broadcast_chat_id"], message_id=data["broadcast_msg_id"])
+                sent += 1
+            except Exception:
+                pass
         except Exception:
             pass
-        await asyncio.sleep(0.05)
-    await call.message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi.")
-    await state.clear()
 
+    await call.message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi.\n🚫 {blocked} ta foydalanuvchi botni bloklagan.")
+    await state.clear()
 
 @admin_router.callback_query(AdminBroadcastStates.confirming, F.data == "broadcast_cancel")
 async def admin_broadcast_cancel(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.answer("❌ Reklama bekor qilindi.")
 
-
 # ============================================================
-# Asosiy main() funksiyasi
+# MAIN FUNCTION
 # ============================================================
 async def main():
     await init_db()
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_routers(admin_router, start_router, music_search_router, downloader_router, round_video_router)
+    
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Bot Python 3.13 rejimida muvaffaqiyatli ishga tushdi!")
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
