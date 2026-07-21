@@ -12,7 +12,7 @@ from yt_dlp import YoutubeDL
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -27,12 +27,15 @@ import aiosqlite
 logging.basicConfig(level=logging.INFO)
 
 # ============================================================
-# config.py
+# config.py — XAVFSIZLIK SOZLAMALARI
 # ============================================================
 load_dotenv()
 
-BOT_TOKEN = "8922320901:AAGtDeCizMPNVj9-eklPOOr_MnIJ-fVf2KA"
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "8004582786").split(",") if x.strip()]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN .env faylida topilmadi!")
+
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 TEMP_DIR = "temp"
 SONGS_PER_PAGE = 10
@@ -241,12 +244,12 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
 
 
 # ============================================================
-# Services (Biznes Logika)
+# Services (ASYNC TIZIMGA O'TKAZILGAN BIZNES LOGIKA)
 # ============================================================
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 
-def search_tracks(query: str, limit: int = 50):
+def _sync_search_tracks(query: str, limit: int = 50):
     url = "https://itunes.apple.com/search"
     params = {"term": query, "media": "music", "entity": "song", "limit": limit}
     resp = requests.get(url, params=params, timeout=15)
@@ -261,15 +264,22 @@ def search_tracks(query: str, limit: int = 50):
     return results
 
 
+async def search_tracks(query: str, limit: int = 50):
+    return await asyncio.to_thread(_sync_search_tracks, query, limit)
+
+
 async def recognize_from_file(file_path: str):
     try:
         shazam_wav = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}_shazam.wav")
-        subprocess.run([
-            "ffmpeg", "-y", "-i", file_path,
-            "-ss", "0", "-t", "4",
-            "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
-            shazam_wav
-        ], check=True, capture_output=True)
+        await asyncio.to_thread(
+            subprocess.run,
+            [
+                "ffmpeg", "-y", "-i", file_path,
+                "-ss", "0", "-t", "4",
+                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+                shazam_wav
+            ], check=True, capture_output=True
+        )
 
         if not os.path.exists(shazam_wav):
             return None
@@ -286,8 +296,7 @@ async def recognize_from_file(file_path: str):
             "Content-Type": "application/octet-stream"
         }
 
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: requests.post(url, headers=headers, data=raw_bytes, timeout=15))
+        response = await asyncio.to_thread(requests.post, url, headers=headers, data=raw_bytes, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
@@ -299,45 +308,70 @@ async def recognize_from_file(file_path: str):
         return None
 
 
-def download_track_audio(title: str, artist: str) -> str:
+def _sync_download_track_audio(title: str, artist: str) -> str:
     query = f"ytsearch1:{artist} {title} audio"
-    out_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.%(ext)s")
+    unique_id = uuid.uuid4().hex
+    out_tmpl = os.path.join(TEMP_DIR, f"{unique_id}.%(ext)s")
     ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": out_path,
+        "outtmpl": out_tmpl,
         "quiet": True,
         "noplaylist": True,
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
     }
     with YoutubeDL(ydl_opts) as ydl:
         ydl.download([query])
-    return out_path.replace("%(ext)s", "mp3")
+    return os.path.join(TEMP_DIR, f"{unique_id}.mp3")
 
 
-def download_media(url: str) -> str:
-    out_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.%(ext)s")
-    ydl_opts = {"format": "bestvideo+bestaudio/best", "outtmpl": out_path, "quiet": True, "merge_output_format": "mp4", "noplaylist": True}
+async def download_track_audio(title: str, artist: str) -> str:
+    return await asyncio.to_thread(_sync_download_track_audio, title, artist)
+
+
+def _sync_download_media(url: str) -> str:
+    unique_id = uuid.uuid4().hex
+    out_tmpl = os.path.join(TEMP_DIR, f"{unique_id}.%(ext)s")
+    ydl_opts = {
+        "format": "bestvideo+bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "merge_output_format": "mp4",
+        "noplaylist": True
+    }
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-    if not os.path.exists(filename):
-        filename = os.path.splitext(filename)[0] + ".mp4"
+    
+    expected_mp4 = os.path.splitext(filename)[0] + ".mp4"
+    if os.path.exists(expected_mp4):
+        return expected_mp4
     return filename
 
 
-def extract_audio(video_path: str) -> str:
+async def download_media(url: str) -> str:
+    return await asyncio.to_thread(_sync_download_media, url)
+
+
+async def extract_audio(video_path: str) -> str:
     audio_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.wav")
-    subprocess.run(["ffmpeg", "-y", "-i", video_path, "-vn", "-ar", "44100", "-ac", "2", audio_path], check=True, capture_output=True)
+    await asyncio.to_thread(
+        subprocess.run,
+        ["ffmpeg", "-y", "-i", video_path, "-vn", "-ar", "44100", "-ac", "2", audio_path],
+        check=True, capture_output=True
+    )
     return audio_path
 
 
-def to_round_video(input_path: str) -> str:
+async def to_round_video(input_path: str) -> str:
     out_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}_round.mp4")
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-vf", "crop='min(in_w,in_h)':'min(in_w,in_h)',scale=640:640",
-        "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", "-b:a", "128k", "-t", "60", out_path
-    ], check=True, capture_output=True)
+    await asyncio.to_thread(
+        subprocess.run,
+        [
+            "ffmpeg", "-y", "-i", input_path,
+            "-vf", "crop='min(in_w,in_h)':'min(in_w,in_h)',scale=640:640",
+            "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", "-b:a", "128k", "-t", "60", out_path
+        ], check=True, capture_output=True
+    )
     return out_path
 
 
@@ -363,14 +397,15 @@ async def is_subscribed(bot, user_id: int) -> bool:
 
 async def show_subscribe_prompt(message_or_cb, lang: str):
     channels = await get_channels()
-    if hasattr(message_or_cb, "message"):
+    if hasattr(message_or_cb, "message") and message_or_cb.message:
         await message_or_cb.message.answer(t("subscribe_required", lang), reply_markup=subscribe_kb(channels, lang))
     else:
         await message_or_cb.answer(t("subscribe_required", lang), reply_markup=subscribe_kb(channels, lang))
 
 
 @start_router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
     await add_user_if_not_exists(message.from_user.id)
     lang = await get_user_language(message.from_user.id)
     if not lang:
@@ -404,7 +439,8 @@ async def check_subscription(call: CallbackQuery):
 
 
 @start_router.message(F.text.in_({"🌐 Til", "🌐 Язык", "🌐 Language"}))
-async def change_language(message: Message):
+async def change_language(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer(t("choose_language", "uz"), reply_markup=language_kb())
 
 
@@ -414,6 +450,7 @@ music_search_router = Router()
 
 @music_search_router.message(F.text.in_({"🎵 Qo'shiq qidirish", "🎵 Поиск музыки", "🎵 Search Music"}))
 async def start_search(message: Message, state: FSMContext):
+    await state.clear()
     lang = await get_user_language(message.from_user.id) or "uz"
     await message.answer(t("search_song_prompt", lang))
     await state.set_state(SearchStates.waiting_query)
@@ -423,8 +460,8 @@ async def send_results_page(message: Message, results, page: int, lang: str):
     if not results:
         await message.answer(t("nothing_found", lang))
         return
-    start = page * 10
-    page_items = results[start:start + 10]
+    start = page * SONGS_PER_PAGE
+    page_items = results[start:start + SONGS_PER_PAGE]
     lines = [f"{i + 1}. {tr['title']} — {tr['artist']}" for i, tr in enumerate(page_items)]
     await message.answer("\n".join(lines), reply_markup=songs_page_kb(results, page, lang))
 
@@ -433,7 +470,7 @@ async def send_results_page(message: Message, results, page: int, lang: str):
 async def handle_text_query(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id) or "uz"
     await message.answer(t("searching", lang))
-    results = search_tracks(message.text)
+    results = await search_tracks(message.text)
     await state.update_data(results=results)
     await send_results_page(message, results, 0, lang)
 
@@ -452,7 +489,7 @@ async def handle_voice_query(message: Message, state: FSMContext):
     if not track:
         await message.answer(t("not_recognized", lang))
         return
-    results = search_tracks(f"{track['artist']} {track['title']}")
+    results = await search_tracks(f"{track['artist']} {track['title']}")
     await state.update_data(results=results)
     await message.answer(f"{t('recognized', lang)} {track['title']} — {track['artist']}")
     await send_results_page(message, results, 0, lang)
@@ -466,7 +503,7 @@ async def handle_video_query(message: Message, state: FSMContext):
     tg_file = await message.bot.get_file(file.file_id)
     local_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.mp4")
     await message.bot.download_file(tg_file.file_path, local_path)
-    audio_path = extract_audio(local_path)
+    audio_path = await extract_audio(local_path)
     track = await recognize_from_file(audio_path)
     if os.path.exists(local_path):
         os.remove(local_path)
@@ -475,7 +512,7 @@ async def handle_video_query(message: Message, state: FSMContext):
     if not track:
         await message.answer(t("not_recognized", lang))
         return
-    results = search_tracks(f"{track['artist']} {track['title']}")
+    results = await search_tracks(f"{track['artist']} {track['title']}")
     await state.update_data(results=results)
     await message.answer(f"{t('recognized', lang)} {track['title']} — {track['artist']}")
     await send_results_page(message, results, 0, lang)
@@ -487,8 +524,8 @@ async def paginate_songs(call: CallbackQuery, state: FSMContext):
     page = int(call.data.split("_")[-1])
     data = await state.get_data()
     results = data.get("results", [])
-    start = page * 10
-    page_items = results[start:start + 10]
+    start = page * SONGS_PER_PAGE
+    page_items = results[start:start + SONGS_PER_PAGE]
     lines = [f"{i + 1}. {tr['title']} — {tr['artist']}" for i, tr in enumerate(page_items)]
     await call.message.edit_text("\n".join(lines), reply_markup=songs_page_kb(results, page, lang))
 
@@ -504,13 +541,15 @@ async def pick_song(call: CallbackQuery, state: FSMContext):
     track = results[index]
     status_msg = await call.message.answer(t("downloading", lang))
     try:
-        path = download_track_audio(track["title"], track["artist"])
-        await call.message.answer_audio(
-            FSInputFile(path, filename=f"{track['artist']} - {track['title']}.mp3"),
-            title=track["title"], performer=track["artist"]
-        )
+        path = await download_track_audio(track["title"], track["artist"])
         if os.path.exists(path):
+            await call.message.answer_audio(
+                FSInputFile(path, filename=f"{track['artist']} - {track['title']}.mp3"),
+                title=track["title"], performer=track["artist"]
+            )
             os.remove(path)
+        else:
+            await call.message.answer("⚠️ Faylni yuklab bo'lmadi.")
     except Exception as e:
         await call.message.answer(f"⚠️ Xatolik: {e}")
     finally:
@@ -526,6 +565,7 @@ downloader_router = Router()
 
 @downloader_router.message(F.text.in_({"📥 Instagram / TikTok / YouTube"}))
 async def start_downloader(message: Message, state: FSMContext):
+    await state.clear()
     lang = await get_user_language(message.from_user.id) or "uz"
     await message.answer(t("send_link", lang))
     await state.set_state(DownloaderStates.waiting_link)
@@ -536,7 +576,7 @@ async def handle_link(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id) or "uz"
     status_msg = await message.answer(t("downloading", lang))
     try:
-        video_path = download_media(message.text.strip())
+        video_path = await download_media(message.text.strip())
         await message.answer_video(FSInputFile(video_path))
         await state.update_data(last_video_path=video_path)
         b = InlineKeyboardBuilder().button(text=t("song_in_video", lang), callback_data="identify_video_song")
@@ -558,7 +598,7 @@ async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
     if not video_path or not os.path.exists(video_path):
         return
     await call.message.answer(t("recognizing", lang))
-    audio_path = extract_audio(video_path)
+    audio_path = await extract_audio(video_path)
     track = await recognize_from_file(audio_path)
     if os.path.exists(audio_path):
         os.remove(audio_path)
@@ -567,12 +607,12 @@ async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
         return
     await call.message.answer(f"{t('recognized', lang)} {track['title']} — {track['artist']}")
     try:
-        mp3_path = download_track_audio(track["title"], track["artist"])
-        await call.message.answer_audio(
-            FSInputFile(mp3_path, filename=f"{track['artist']} - {track['title']}.mp3"),
-            title=track["title"], performer=track["artist"]
-        )
+        mp3_path = await download_track_audio(track["title"], track["artist"])
         if os.path.exists(mp3_path):
+            await call.message.answer_audio(
+                FSInputFile(mp3_path, filename=f"{track['artist']} - {track['title']}.mp3"),
+                title=track["title"], performer=track["artist"]
+            )
             os.remove(mp3_path)
     except Exception as e:
         await call.message.answer(f"⚠️ Xatolik: {e}")
@@ -581,8 +621,9 @@ async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
 round_video_router = Router()
 
 
-@round_video_router.message(F.text.in_({"⭕️ Dumaloq video", "⭕️ Круглое видео"}))
+@round_video_router.message(F.text.in_({"⭕️ Dumaloq video", "⭕️ Круглое видео", "⭕️ Round video"}))
 async def start_round_video(message: Message, state: FSMContext):
+    await state.clear()
     lang = await get_user_language(message.from_user.id) or "uz"
     await message.answer(t("send_square_video", lang))
     await state.set_state(RoundVideoStates.waiting_video)
@@ -596,7 +637,7 @@ async def handle_round_video(message: Message, state: FSMContext):
     local_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.mp4")
     await message.bot.download_file(tg_file.file_path, local_path)
     try:
-        round_path = to_round_video(local_path)
+        round_path = await to_round_video(local_path)
         await message.answer_video_note(FSInputFile(round_path))
         if os.path.exists(round_path):
             os.remove(round_path)
@@ -617,9 +658,10 @@ admin_router = Router()
 
 
 @admin_router.message(F.text.in_({"🛠 Admin panel", "🛠 Админ панель"}))
-async def open_admin_panel(message: Message):
+async def open_admin_panel(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
+    await state.clear()
     await message.answer("🛠 Admin panel:", reply_markup=admin_panel_kb())
 
 
@@ -656,6 +698,7 @@ async def admin_channel_add_start(call: CallbackQuery, state: FSMContext):
 async def admin_channel_add_finish(message: Message, state: FSMContext):
     parts = [p.strip() for p in message.text.split("|")]
     if len(parts) < 2:
+        await message.answer("⚠️ Format xato kiritildi!")
         return
     await add_channel(parts[0], parts[2] if len(parts) > 2 else parts[0], parts[1])
     await message.answer("✅ Kanal qo'shildi.")
@@ -699,6 +742,12 @@ async def admin_broadcast_send(call: CallbackQuery, state: FSMContext):
         await asyncio.sleep(0.05)
     await call.message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi.")
     await state.clear()
+
+
+@admin_router.callback_query(AdminBroadcastStates.confirming, F.data == "broadcast_cancel")
+async def admin_broadcast_cancel(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.answer("❌ Reklama bekor qilindi.")
 
 
 # ============================================================
