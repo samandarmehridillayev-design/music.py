@@ -1,5 +1,6 @@
 """================================================================
   MUSIQA BOT — OPTIMALLASHTIRILGAN VA XAVFSIZ PYTHON 3.13 KODI
+  (Render Port Fix & Memory Cleanup Bilan)
 ================================================================"""
 import asyncio
 import logging
@@ -10,6 +11,7 @@ import httpx
 from dotenv import load_dotenv
 from yt_dlp import YoutubeDL
 from shazamio import Shazam
+from aiohttp import web
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
@@ -517,7 +519,6 @@ async def handle_link(message: Message, state: FSMContext):
         await message.answer(t("song_in_video", lang), reply_markup=b.as_markup())
     except Exception as e:
         await message.answer(f"⚠️ Xatolik: {e}")
-        # Agar xatolik bo'lsa va fayl yuklangan bo'lsa, o'chirib tashlaymiz
         if video_path and os.path.exists(video_path):
             os.remove(video_path)
     finally:
@@ -538,7 +539,6 @@ async def identify_song_in_video(call: CallbackQuery, state: FSMContext):
     audio_path = await extract_audio(video_path)
     track = await recognize_from_file(audio_path)
     
-    # Fayllarni tozalash (Xotirani bo'shatish)
     if os.path.exists(audio_path):
         os.remove(audio_path)
     if os.path.exists(video_path):
@@ -690,6 +690,12 @@ async def admin_broadcast_cancel(call: CallbackQuery, state: FSMContext):
     await call.message.answer("❌ Reklama bekor qilindi.")
 
 # ============================================================
+# RENDER HTTP PING SERVER HANDLER
+# ============================================================
+async def handle_ping(request):
+    return web.Response(text="Bot is active and running!")
+
+# ============================================================
 # MAIN FUNCTION
 # ============================================================
 async def main():
@@ -700,6 +706,19 @@ async def main():
     
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Bot Python 3.13 rejimida muvaffaqiyatli ishga tushdi!")
+
+    # --- Render.com Web Service Port xatoligini bartaraf etuvchi soxta server ---
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"Render uchun Dummy Web Server {port}-portda ishga tushirildi.")
+    # --------------------------------------------------------------------------
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
