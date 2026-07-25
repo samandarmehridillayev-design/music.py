@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none, viewport-fit=cover">
+    <title>Ultimate Block Blast Mobile FX</title>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --grid-bg: rgba(19, 26, 38, 0.6);
+            --cell-empty: #1e293b;
+            --text-color: #f8fafc;
+            --theme-accent: #38bdf8;
+            --card-bg: rgba(19, 26, 38, 0.6);
+            --border-style: 1px solid rgba(255, 255, 255, 0.08);
+            --blur-val: 20px;
+
+            /* WebStorm xatoliklarini yo'qotish uchun CSS o'zgaruvchilar */
+            --dx: 0px;
+            --dy: 0px;
+            --rot: 0deg;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.5s ease, border 0.5s ease, box-shadow 0.5s ease;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        .glow-bg {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, var(--theme-accent) 0%, rgba(0,0,0,0) 70%);
+            top: 15%; left: 15%; z-index: -2;
+            filter: blur(50px);
+            opacity: 0.25;
+            animation: floatGlow 10s ease-in-out infinite alternate;
+        }
+        .glow-bg.secondary {
+            top: 55%; left: 55%;
+            animation: floatGlow 14s ease-in-out infinite alternate-reverse;
+        }
+
+        @keyframes floatGlow {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(30px, 40px) scale(1.15); }
+        }
+
+        .game-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--blur-val));
+            -webkit-backdrop-filter: blur(var(--blur-val));
+            border: var(--border-style);
+            padding: 16px;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 420px;
+            width: 94%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .score-board {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 8px;
+            gap: 10px;
+        }
+
+        .score-box {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 14px;
+            padding: 10px;
+            text-align: center;
+            flex: 1;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .score-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            margin-bottom: 2px;
+        }
+
+        .score-val {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--theme-accent);
+        }
+
+        #theme-toast {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--theme-accent);
+            background: rgba(255,255,255,0.07);
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin-bottom: 6px;
+            opacity: 0;
+            transform: translateY(-5px);
+            transition: all 0.4s ease;
+        }
+
+        /* IDE ko'rishi uchun klass ochiq yozildi */
+        #theme-toast.show { opacity: 1; transform: translateY(0); }
+
+        #combo-popup {
+            color: #f59e0b;
+            font-weight: 900;
+            min-height: 24px;
+            font-size: 18px;
+            text-align: center;
+            margin-bottom: 6px;
+            text-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 4px;
+            background: var(--grid-bg);
+            padding: 6px;
+            border-radius: 16px;
+            width: 100%;
+            aspect-ratio: 1/1;
+            box-shadow: inset 0 4px 10px rgba(0,0,0,0.4);
+            position: relative;
+        }
+
+        .cell {
+            background: var(--cell-empty);
+            border-radius: 5px;
+            position: relative;
+        }
+
+        .cell.hovered {
+            background: rgba(255, 255, 255, 0.3) !important;
+            transform: scale(0.92);
+        }
+
+        .pieces-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            margin-top: 15px;
+            min-height: 100px;
+            gap: 10px;
+        }
+
+        .piece-holder {
+            flex: 1;
+            aspect-ratio: 1/1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .mini-grid {
+            display: grid;
+            gap: 2px;
+        }
+
+        .c-1 { background: linear-gradient(135deg, #ff2a85, #ff0040); box-shadow: 0 3px 6px rgba(255, 0, 64, 0.3); }
+        .c-2 { background: linear-gradient(135deg, #00f2fe, #0076ff); box-shadow: 0 3px 6px rgba(0, 118, 255, 0.3); }
+        .c-3 { background: linear-gradient(135deg, #99e600, #33cc33); box-shadow: 0 3px 6px rgba(51, 204, 51, 0.3); }
+        .c-4 { background: linear-gradient(135deg, #ffb300, #ff4500); box-shadow: 0 3px 6px rgba(255, 69, 0, 0.3); }
+        .c-5 { background: linear-gradient(135deg, #9d4edd, #6a0dad); box-shadow: 0 3px 6px rgba(106, 13, 173, 0.3); }
+
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            border-radius: 2px;
+            z-index: 999;
+            animation: explode 0.4s cubic-bezier(0.1, 0.8, 0.25, 1) forwards;
+        }
+
+        @keyframes explode {
+            0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(0) rotate(var(--rot)); opacity: 0; }
+        }
+
+        .dragging {
+            position: fixed;
+            z-index: 9999;
+            pointer-events: none;
+            transform: scale(1.0);
+            opacity: 0.9;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(7, 10, 17, 0.95);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .overlay h1 {
+            font-size: 34px;
+            margin-bottom: 5px;
+            background: linear-gradient(to right, #ff0055, var(--theme-accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #4f46e5, #6366f1);
+            border: none;
+            color: white;
+            padding: 12px 30px;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 6px 15px rgba(99, 102, 241, 0.35);
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+<div class="glow-bg"></div>
+<div class="glow-bg secondary"></div>
+
+<div id="theme-toast">Mavzu: Neon Shisha</div>
+<div id="combo-popup"></div>
+
+<div class="game-container">
+    <div class="score-board">
+        <div class="score-box">
+            <div class="score-label">BALL</div>
+            <div id="score" class="score-val">0</div>
+        </div>
+        <div class="score-box">
+            <div class="score-label">REKORD</div>
+            <div id="high-score" class="score-val">0</div>
+        </div>
+    </div>
+
+    <div class="grid" id="board"></div>
+
+    <div class="pieces-container">
+        <div class="piece-holder" id="holder-0" data-index="0"></div>
+        <div class="piece-holder" id="holder-1" data-index="1"></div>
+        <div class="piece-holder" id="holder-2" data-index="2"></div>
+    </div>
+</div>
+
+<div class="overlay" id="game-over">
+    <h1>O'yin Tugadi!</h1>
+    <p style="font-size: 16px; color: #94a3b8;">Siz to'plagan umumiy ball:</p>
+    <div id="final-score" style="font-size: 36px; font-weight: 900; color: #38bdf8; margin: 8px 0;">0</div>
+    <button class="btn" onclick="resetGame()">Qaytadan Boshlash</button>
+</div>
+
+<script>
+    const THEMES = [
+        { name: "Neon Glassmorphism", bg: "#0b0f19", grid: "rgba(255, 255, 255, 0.05)", cell: "rgba(255,255,255,0.08)", card: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255,255,255,0.15)", blur: "25px", accent: "#38bdf8" },
+        { name: "Cyberpunk 2077", bg: "#00010d", grid: "#1a0826", cell: "#2d0b4d", card: "rgba(26,8,38,0.8)", border: "2px solid #fcee0a", blur: "0px", accent: "#fcee0a" },
+        { name: "Matrix Code", bg: "#020d04", grid: "#051f0a", cell: "#0d3a14", card: "rgba(5,31,10,0.8)", border: "1px solid #00ff41", blur: "5px", accent: "#00ff41" },
+        { name: "Deep Space", bg: "#050510", grid: "#0d1127", cell: "#1b2347", card: "rgba(13,17,39,0.7)", border: "1px solid #4f46e5", blur: "15px", accent: "#818cf8" },
+        { name: "Volcano Inferno", bg: "#140505", grid: "#2d0d0d", cell: "#4d1414", card: "rgba(45,13,13,0.8)", border: "1px solid #ff4500", blur: "8px", accent: "#ff4500" },
+        { name: "Frozen Aurora", bg: "#031217", grid: "#082f38", cell: "#115e59", card: "rgba(8,47,56,0.7)", border: "1px solid #2dd4bf", blur: "20px", accent: "#2dd4bf" }
+    ];
+
+    const BOARD_SIZE = 8;
+    let boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+    let score = 0;
+    let highScore = localStorage.getItem('bb_fx_highscore') || 0;
+    let activePieces = [null, null, null];
+    let currentThemeIndex = 0;
+
+    const SHAPES = [
+        { structure: [[1]], color: 1 },
+        { structure: [[1, 1]], color: 2 },
+        { structure: [[1, 1, 1]], color: 3 },
+        { structure: [[1, 1], [1, 1]], color: 4 },
+        { structure: [[1, 1, 1], [0, 1, 0]], color: 5 },
+        { structure: [[1, 0], [1, 0], [1, 1]], color: 1 },
+        { structure: [[1, 1, 1], [1, 1, 1], [1, 1, 1]], color: 2 },
+        { structure: [[1, 1, 0], [0, 1, 1]], color: 4 },
+        { structure: [[1], [1], [1]], color: 3 }
+    ];
+
+    document.getElementById('high-score').innerText = highScore;
+    const boardEl = document.getElementById('board');
+
+    function changeTheme() {
+        const theme = THEMES[currentThemeIndex];
+        const root = document.documentElement;
+
+        root.style.setProperty('--bg-color', theme.bg);
+        root.style.setProperty('--grid-bg', theme.grid);
+        root.style.setProperty('--cell-empty', theme.cell);
+        root.style.setProperty('--card-bg', theme.card);
+        root.style.setProperty('--border-style', theme.border);
+        root.style.setProperty('--blur-val', theme.blur);
+        root.style.setProperty('--theme-accent', theme.accent);
+
+        const toast = document.getElementById('theme-toast');
+        toast.innerText = `Mavzu: ${theme.name}`;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2500);
+
+        currentThemeIndex = (currentThemeIndex + 1) % THEMES.length;
+    }
+
+    function createBoard() {
+        boardEl.innerHTML = '';
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.row = r;
+                cell.dataset.col = c;
+                boardEl.appendChild(cell);
+            }
+        }
+    }
+
+    function drawBoard() {
+        const cells = boardEl.children;
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const idx = r * BOARD_SIZE + c;
+                const val = boardState[r][c];
+                cells[idx].className = 'cell';
+                if (val > 0) cells[idx].classList.add(`c-${val}`);
+            }
+        }
+    }
+
+    function createShatterEffect(row, col, colorClass) {
+        const cells = boardEl.children;
+        const targetCell = cells[row * BOARD_SIZE + col];
+        if (!targetCell) return;
+
+        const rect = targetCell.getBoundingClientRect();
+        const boardRect = boardEl.getBoundingClientRect();
+
+        const x = rect.left - boardRect.left;
+        const y = rect.top - boardRect.top;
+
+        for (let i = 0; i < 8; i++) {
+            const particle = document.createElement('div');
+            particle.classList.add('particle', colorClass);
+
+            const size = Math.random() * 5 + 3;
+            particle.style.width = `${size}px`;
+            particle.style.height = `${size}px`;
+            particle.style.left = `${x + rect.width / 2}px`;
+            particle.style.top = `${y + rect.height / 2}px`;
+
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 60 + 30;
+            const dx = Math.cos(angle) * speed;
+            const dy = Math.sin(angle) * speed;
+            const rot = Math.random() * 360;
+
+            particle.style.setProperty('--dx', `${dx}px`);
+            particle.style.setProperty('--dy', `${dy}px`);
+            particle.style.setProperty('--rot', `${rot}deg`);
+
+            boardEl.appendChild(particle);
+            setTimeout(() => particle.remove(), 400);
+        }
+    }
+
+    function spawnPieces() {
+        for (let i = 0; i < 3; i++) {
+            const randIndex = Math.floor(Math.random() * SHAPES.length);
+            activePieces[i] = JSON.parse(JSON.stringify(SHAPES[randIndex]));
+            renderPieceInHolder(activePieces[i], i);
+        }
+    }
+
+    function renderPieceInHolder(piece, holderIdx) {
+        const holder = document.getElementById(`holder-${holderIdx}`);
+        holder.innerHTML = '';
+        if (!piece) return;
+
+        const miniGrid = document.createElement('div');
+        miniGrid.classList.add('mini-grid');
+        miniGrid.style.gridTemplateRows = `repeat(${piece.structure.length}, 1fr)`;
+        miniGrid.style.gridTemplateColumns = `repeat(${piece.structure[0].length}, 1fr)`;
+
+        const cellSize = 16;
+        miniGrid.style.width = `${piece.structure[0].length * cellSize + (piece.structure[0].length - 1) * 2}px`;
+
+        piece.structure.forEach(row => {
+            row.forEach(val => {
+                const cell = document.createElement('div');
+                cell.style.width = `${cellSize}px`;
+                cell.style.height = `${cellSize}px`;
+                cell.style.borderRadius = '3px';
+                if (val) cell.classList.add(`c-${piece.color}`);
+                else cell.style.background = 'transparent';
+                miniGrid.appendChild(cell);
+            });
+        });
+
+        holder.appendChild(miniGrid);
+        initDragAndDrop(holder, holderIdx);
+    }
+
+    function initDragAndDrop(holder, index) {
+        let currentClone = null;
+        let touchOffsetY = 70;
+
+        function onStart(e) {
+            if (!activePieces[index]) return;
+
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            currentClone = holder.querySelector('.mini-grid').cloneNode(true);
+            currentClone.classList.add('dragging');
+
+            const sampleCell = document.querySelector('.cell');
+            const cellSize = sampleCell.getBoundingClientRect().width;
+            const gap = 4;
+
+            currentClone.style.width = `${activePieces[index].structure[0].length * cellSize + (activePieces[index].structure[0].length - 1) * gap}px`;
+
+            Array.from(currentClone.children).forEach(c => {
+                c.style.width = `${cellSize}px`;
+                c.style.height = `${cellSize}px`;
+            });
+
+            document.body.appendChild(currentClone);
+            moveClone(clientX, clientY);
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onEnd);
+            window.addEventListener('touchmove', onMove, { passive: false });
+            window.addEventListener('touchend', onEnd);
+        }
+
+        function moveClone(x, y) {
+            if (!currentClone) return;
+            currentClone.style.left = `${x - currentClone.offsetWidth / 2}px`;
+            currentClone.style.top = `${y - currentClone.offsetHeight - touchOffsetY}px`;
+        }
+
+        function onMove(e) {
+            if (e.cancelable) e.preventDefault();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            moveClone(clientX, clientY);
+
+            clearHoverEffects();
+
+            if (currentClone) {
+                const rect = currentClone.getBoundingClientRect();
+                const sampleCell = document.querySelector('.cell');
+                const cellSize = sampleCell.getBoundingClientRect().width;
+                const checkX = rect.left + (cellSize / 2);
+                const checkY = rect.top + (cellSize / 2);
+
+                const target = getGridCellUnderPoint(checkX, checkY);
+                if (target) {
+                    highlightPlacement(target.row, target.col, activePieces[index]);
+                }
+            }
+        }
+
+        function onEnd(e) {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onEnd);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onEnd);
+
+            if (!currentClone) return;
+
+            const rect = currentClone.getBoundingClientRect();
+            const sampleCell = document.querySelector('.cell');
+            const cellSize = sampleCell.getBoundingClientRect().width;
+            const checkX = rect.left + (cellSize / 2);
+            const checkY = rect.top + (cellSize / 2);
+
+            currentClone.remove();
+            currentClone = null;
+            clearHoverEffects();
+
+            const target = getGridCellUnderPoint(checkX, checkY);
+
+            if (target && canPlace(target.row, target.col, activePieces[index])) {
+                let blockCells = 0;
+                activePieces[index].structure.forEach(r => r.forEach(v => { if(v) blockCells++; }));
+                score += (blockCells * 30);
+
+                placePiece(target.row, target.col, activePieces[index]);
+                activePieces[index] = null;
+                holder.innerHTML = '';
+
+                checkMatches();
+
+                if (activePieces.every(p => p === null)) {
+                    spawnPieces();
+                }
+
+                setTimeout(checkGameOver, 900);
+            }
+        }
+
+        holder.onmousedown = onStart;
+        holder.ontouchstart = onStart;
+    }
+
+    function getGridCellUnderPoint(x, y) {
+        const cells = document.querySelectorAll('.cell');
+        for (let cell of cells) {
+            const rect = cell.getBoundingClientRect();
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                return { row: parseInt(cell.dataset.row), col: parseInt(cell.dataset.col) };
+            }
+        }
+        return null;
+    }
+
+    function canPlace(startRow, startCol, piece) {
+        if (!piece) return false;
+        for (let r = 0; r < piece.structure.length; r++) {
+            for (let c = 0; c < piece.structure[r].length; c++) {
+                if (piece.structure[r][c]) {
+                    const targetR = startRow + r;
+                    const targetC = startCol + c;
+                    if (targetR >= BOARD_SIZE || targetC >= BOARD_SIZE || boardState[targetR][targetC] > 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    function highlightPlacement(startRow, startCol, piece) {
+        if (!canPlace(startRow, startCol, piece)) return;
+        const cells = boardEl.children;
+        for (let r = 0; r < piece.structure.length; r++) {
+            for (let c = 0; c < piece.structure[r].length; c++) {
+                if (piece.structure[r][c]) {
+                    const targetR = startRow + r;
+                    const targetC = startCol + c;
+                    const idx = targetR * BOARD_SIZE + targetC;
+                    if (cells[idx]) cells[idx].classList.add('hovered');
+                }
+            }
+        }
+    }
+
+    function clearHoverEffects() {
+        document.querySelectorAll('.cell').forEach(c => c.classList.remove('hovered'));
+    }
+
+    function placePiece(startRow, startCol, piece) {
+        for (let r = 0; r < piece.structure.length; r++) {
+            for (let c = 0; c < piece.structure[r].length; c++) {
+                if (piece.structure[r][c]) {
+                    boardState[startRow + r][startCol + c] = piece.color;
+                }
+            }
+        }
+        drawBoard();
+    }
+
+    function checkMatches() {
+        let rowsToClear = [];
+        let colsToClear = [];
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            if (boardState[r].every(val => val > 0)) rowsToClear.push(r);
+        }
+
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            let match = true;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                if (boardState[r][c] === 0) { match = false; break; }
+            }
+            if (match) colsToClear.push(c);
+        }
+
+        const totalClears = rowsToClear.length + colsToClear.length;
+
+        if (totalClears > 0) {
+            const pointsGained = totalClears * 6000 * totalClears;
+            score += pointsGained;
+
+            const popup = document.getElementById('combo-popup');
+            popup.innerText = totalClears > 1 ? `COMBO x${totalClears}! +${pointsGained}` : `Ajoyib! +${pointsGained}`;
+
+            rowsToClear.forEach(r => {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if(boardState[r][c] > 0) {
+                        createShatterEffect(r, c, `c-${boardState[r][c]}`);
+                        boardState[r][c] = -1;
+                    }
+                }
+            });
+
+            colsToClear.forEach(c => {
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    if(boardState[r][c] !== -1 && boardState[r][c] > 0) {
+                        createShatterEffect(r, c, `c-${boardState[r][c]}`);
+                    }
+                    boardState[r][c] = 0;
+                }
+            });
+
+            rowsToClear.forEach(r => { for (let c = 0; c < BOARD_SIZE; c++) boardState[r][c] = 0; });
+
+            setTimeout(() => {
+                drawBoard();
+                popup.innerText = '';
+            }, 100);
+        }
+
+        document.getElementById('score').innerText = score;
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('bb_fx_highscore', highScore);
+            document.getElementById('high-score').innerText = highScore;
+        }
+    }
+
+    function checkGameOver() {
+        let hasAnyMove = false;
+        for (let i = 0; i < 3; i++) {
+            if (activePieces[i]) {
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (canPlace(r, c, activePieces[i])) {
+                            hasAnyMove = true;
+                            break;
+                        }
+                    }
+                    if (hasAnyMove) break;
+                }
+            }
+        }
+
+        const dynamicRemainingPieces = activePieces.filter(p => p !== null).length;
+        if (!hasAnyMove && dynamicRemainingPieces > 0) {
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('game-over').style.display = 'flex';
+        }
+    }
+
+    function resetGame() {
+        boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+        score = 0;
+        document.getElementById('score').innerText = score;
+        document.getElementById('game-over').style.display = 'none';
+        createBoard();
+        drawBoard();
+        spawnPieces();
+    }
+
+    setInterval(changeTheme, 30000);
+
+    createBoard();
+    spawnPieces();
+    changeTheme();
+</script>
+</body>
+</html>
