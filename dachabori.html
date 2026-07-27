@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DACHABORI — Luxury Resort & Dacha</title>
+    <!-- FontAwesome Ikonkalari -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #030712;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Neon & Animated Background Lights */
+        .bg-glows {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .glow-1 {
+            position: absolute;
+            top: -5%;
+            left: -10%;
+            width: 350px;
+            height: 350px;
+            background: radial-gradient(circle, rgba(234, 179, 8, 0.25) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+            filter: blur(50px);
+            animation: pulseGlow 6s infinite alternate;
+        }
+
+        .glow-2 {
+            position: absolute;
+            top: 45%;
+            right: -15%;
+            width: 380px;
+            height: 380px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+            filter: blur(60px);
+            animation: pulseGlow 8s infinite alternate-reverse;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(1); opacity: 0.7; }
+            100% { transform: scale(1.2); opacity: 1; }
+        }
+
+        /* Container */
+        .container {
+            width: 100%;
+            max-width: 440px;
+            z-index: 1;
+            padding: 20px 16px 50px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        /* Glass Cards Base */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 28px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 22px;
+            border: 1px solid rgba(234, 179, 8, 0.2);
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fef08a 0%, #eab308 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+        }
+
+        .verified-tag {
+            font-size: 11px;
+            background: rgba(234, 179, 8, 0.15);
+            color: #fde047;
+            padding: 6px 14px;
+            border-radius: 30px;
+            border: 1px solid rgba(234, 179, 8, 0.3);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Profile Section */
+        .profile-card {
+            padding: 28px 20px 22px 20px;
+            text-align: center;
+            position: relative;
+        }
+
+        .avatar-ring {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 16px auto;
+            border-radius: 50%;
+            padding: 3px;
+            background: linear-gradient(135deg, #eab308, #38bdf8, #ec4899);
+            box-shadow: 0 0 25px rgba(234, 179, 8, 0.3);
+        }
+
+        .avatar-inner {
+            width: 100%;
+            height: 100%;
+            background: #0f172a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 42px;
+            color: #fde047;
+        }
+
+        .owner-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 2px;
+        }
+
+        .owner-sub {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 16px;
+        }
+
+        .bio-box {
+            font-size: 14px;
+            color: #e2e8f0;
+            line-height: 1.6;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 14px 18px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Qulayliklar Badgelari */
+        .amenities {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 16px;
+        }
+
+        .amenity-chip {
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.06);
+            color: #f8fafc;
+            padding: 8px 14px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .amenity-chip i {
+            color: #38bdf8;
+        }
+
+        /* VIP Price Banner */
+        .price-card {
+            padding: 18px 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(135deg, rgba(234, 179, 8, 0.12), rgba(56, 189, 248, 0.08));
+            border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+
+        .price-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #cbd5e1;
+            font-weight: 700;
+        }
+
+        .price-val {
+            font-size: 22px;
+            font-weight: 800;
+            color: #fde047;
+        }
+
+        .live-status {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            padding: 8px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #4ade80;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #4ade80;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+
+        /* Action Buttons */
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-radius: 20px;
+            text-decoration: none;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .btn-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        /* CTA Main Button (Telegram Direct) */
+        .btn-main {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            border-color: #38bdf8;
+            box-shadow: 0 0 25px rgba(56, 189, 248, 0.4);
+            animation: pulseBtn 2s infinite;
+        }
+        .btn-main .btn-icon { background: rgba(255, 255, 255, 0.2); }
+
+        @keyframes pulseBtn {
+            0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.6); }
+            70% { box-shadow: 0 0 0 15px rgba(56, 189, 248, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+
+        /* Call Button */
+        .btn-call {
+            background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+            border-color: #4ade80;
+            box-shadow: 0 8px 20px rgba(22, 101, 52, 0.3);
+        }
+        .btn-call .btn-icon { background: rgba(255, 255, 255, 0.2); }
+
+        /* Secondary Links */
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .btn-secondary .btn-icon { background: rgba(255, 255, 255, 0.08); }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+
+        .footer-copy {
+            text-align: center;
+            font-size: 12px;
+            color: #475569;
+            margin-top: 10px;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-glows">
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+</div>
+
+<div class="container">
+
+    <!-- Header -->
+    <div class="glass-card header">
+        <div class="logo">DACHABORI</div>
+        <div class="verified-tag">
+            <i class="fa-solid fa-crown"></i> PREMIUM
+        </div>
+    </div>
+
+    <!-- Profil -->
+    <div class="glass-card profile-card">
+        <div class="avatar-ring">
+            <div class="avatar-inner">
+                <i class="fa-solid fa-house-chimney-window"></i>
+            </div>
+        </div>
+
+        <h1 class="owner-title">Mirtillayev Mansur</h1>
+        <p class="owner-sub">📍 Chorvoq, so'lim go'shada</p>
+
+        <div class="bio-box">
+            ✨ Oila va do'stlar bilan unutilmas dam olish uchun barcha sharoitlarga ega shinam dacha!
+        </div>
+
+        <!-- Qulayliklar -->
+        <div class="amenities">
+            <div class="amenity-chip"><i class="fa-solid fa-water-ladder"></i> Basseyn</div>
+            <div class="amenity-chip"><i class="fa-solid fa-couch"></i> Tapchan</div>
+            <div class="amenity-chip"><i class="fa-solid fa-fire-burner"></i> Mangal</div>
+            <div class="amenity-chip"><i class="fa-solid fa-tv"></i> Smart TV</div>
+        </div>
+    </div>
+
+    <!-- Narx Card -->
+    <div class="glass-card price-card">
+        <div>
+            <div class="price-label">Ijara Narxi</div>
+            <div class="price-val">1 000 000 <span style="font-size:13px; color:#cbd5e1; font-weight:400;">UZS / kun</span></div>
+        </div>
+        <div class="live-status">
+            <span class="pulse-dot"></span> Bo'sh kunlar bor
+        </div>
+    </div>
+
+    <!-- Ishlaydigan Tugmalar -->
+    <div class="btn-group">
+
+        <!-- 1. TELEGRAM ORQALI BRON QILISH (ASOSIY DIQQAT TORTUVCHI TUGMA) -->
+        <a href="https://t.me/mirtillayevv" target="_blank" class="btn btn-main">
+            <div class="btn-left">
+                <div class="btn-icon"><i class="fa-paper-plane fa-solid"></i></div>
+                <span>Dachani Bron Qilish</span>
+            </div>
+            <i class="fa-solid fa-arrow-right"></i>
+        </a>
+
+        <!-- 2. TELEFON QILISH -->
+        <a href="tel:+998501111338" class="btn btn-call">
+            <div class="btn-left">
+                <div class="btn-icon"><i class="fa-solid fa-phone"></i></div>
+                <span>Qo'ng'iroq Qilish</span>
+            </div>
+            <i class="fa-solid fa-chevron-right" style="opacity: 0.5; font-size:12px;"></i>
+        </a>
+
+        <!-- 3. TELEGRAM KANAL -->
+        <a href="https://t.me/dachabori" target="_blank" class="btn btn-secondary">
+            <div class="btn-left">
+                <div class="btn-icon" style="color:#38bdf8;"><i class="fa-brands fa-telegram"></i></div>
+                <span>Telegram Kanalimiz</span>
+            </div>
+            <i class="fa-solid fa-chevron-right" style="opacity: 0.5; font-size:12px;"></i>
+        </a>
+
+        <!-- 4. INSTAGRAM SAHIFA -->
+        <a href="https://instagram.com/dachabori" target="_blank" class="btn btn-secondary">
+            <div class="btn-left">
+                <div class="btn-icon" style="color:#ec4899;"><i class="fa-brands fa-instagram"></i></div>
+                <span>Instagram Sahifamiz</span>
+            </div>
+            <i class="fa-solid fa-chevron-right" style="opacity: 0.5; font-size:12px;"></i>
+        </a>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-copy">
+        © DACHABORI • VIP RESORT
+    </div>
+
+</div>
+
+</body>
+</html>
